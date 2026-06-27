@@ -1,0 +1,607 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SystemRole {
+  SUPER_ADMIN
+  OWNER
+  ADMIN
+  TREASURER
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING
+}
+
+enum TeamStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  INVITED
+  INACTIVE
+  LEFT
+  BANNED
+}
+
+enum PeriodType {
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum AccountType {
+  CASH
+  BANK
+  EWALLET
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UNPAID
+  PARTIAL
+  PAID
+  EXPIRED
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LicenseStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+  CANCELLED
+}
+
+enum LicensePaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EodMode {
+  AUTO
+  MANUAL
+}
+
+enum EodStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum EmailTemplateType {
+  RESET_PASSWORD
+  VERIFY_EMAIL
+  INVOICE_REMINDER
+  PAYMENT_CONFIRMED
+  TEAM_INVITATION
+  LICENSE_EXPIRING
+}
+
+enum EmailTemplateStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EmailLogStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionSource {
+  CONTRIBUTION
+  DONATION
+  MANUAL_EXPENSE
+  MANUAL_INCOME
+}
+
+model TransactionCategory {
+  id           String          @id @default(uuid()) @db.Uuid
+  teamId       String          @db.Uuid
+  name         String
+  type         TransactionType?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  team         Team            @relation(fields: [teamId], references: [id])
+  transactions Transaction[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
+}
+
+model User {
+  id                     String                 @id @default(uuid()) @db.Uuid
+  email                  String                 @unique
+  passwordHash           String
+  fullName               String
+  phoneNumber            String?
+  role                   SystemRole             @default(MEMBER)
+  status                 UserStatus             @default(ACTIVE)
+  isSuperAdmin           Boolean                @default(false)
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  ownedTeams             Team[]                 @relation("TeamOwner")
+  teamMembers            TeamMember[]
+  contributionInvoices   ContributionInvoice[]
+  contributionPayments   ContributionPayment[]  @relation("PaymentUser")
+  approvedPayments       ContributionPayment[]  @relation("PaymentApprover")
+  rejectedPayments       ContributionPayment[]  @relation("PaymentRejecter")
+  createdTransactions    Transaction[]
+  donations              Donation[]
+  notifications          Notification[]
+  activityLogs           ActivityLog[]
+  auditLogs              AuditLog[]
+  eodRuns                EodRun[]
+  invoiceReminders       InvoiceReminder[]
+  ownedLicenses          OwnerLicense[]
+  licensePayments        LicensePayment[]       @relation("LicensePaymentOwner")
+  approvedLicensePayments LicensePayment[]      @relation("LicensePaymentApprover")
+  createdInvitations     TeamInvitation[]       @relation("InvitationCreatedBy")
+  acceptedInvitations    TeamInvitation[]       @relation("InvitationAcceptedBy")
+  emailTemplatesCreated  EmailTemplate[]        @relation("EmailTemplateCreatedBy")
+  emailTemplatesUpdated  EmailTemplate[]        @relation("EmailTemplateUpdatedBy")
+}
+
+model Plan {
+  id                 String         @id @default(uuid()) @db.Uuid
+  name               String
+  code               String         @unique
+  price              Decimal        @db.Decimal(14, 2)
+  billingCycle       BillingCycle   @default(MONTHLY)
+  maxTeams           Int            @default(1)
+  maxMembers         Int            @default(10)
+  allowReminder      Boolean        @default(true)
+  allowExport        Boolean        @default(true)
+  allowAuditLog      Boolean        @default(true)
+  allowCustomBranding Boolean        @default(false)
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  ownerLicenses      OwnerLicense[]
+}
+
+model OwnerLicense {
+  id           String           @id @default(uuid()) @db.Uuid
+  ownerId      String           @unique @db.Uuid
+  planId       String           @db.Uuid
+  status       LicenseStatus    @default(TRIAL)
+  startDate    DateTime
+  endDate      DateTime
+  trialEndsAt   DateTime?
+  autoRenew    Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  owner        User             @relation(fields: [ownerId], references: [id])
+  plan         Plan             @relation(fields: [planId], references: [id])
+  payments     LicensePayment[]
+
+  @@index([planId, status])
+  @@index([status, endDate])
+}
+
+model LicensePayment {
+  id              String              @id @default(uuid()) @db.Uuid
+  licenseId       String              @db.Uuid
+  ownerId         String              @db.Uuid
+  amount          Decimal             @db.Decimal(14, 2)
+  status          LicensePaymentStatus @default(PENDING)
+  paymentDate     DateTime            @default(now())
+  proofUrl        String?
+  approvedById    String?             @db.Uuid
+  approvedAt      DateTime?
+  rejectedReason  String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  license         OwnerLicense        @relation(fields: [licenseId], references: [id])
+  owner           User                @relation("LicensePaymentOwner", fields: [ownerId], references: [id])
+  approver        User?               @relation("LicensePaymentApprover", fields: [approvedById], references: [id])
+
+  @@index([licenseId, status])
+  @@index([ownerId, status])
+}
+
+model Team {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  name                 String
+  description          String?
+  defaultInvoiceDueDay Int?
+  status               TeamStatus              @default(ACTIVE)
+  ownerId              String                  @db.Uuid
+  inviteCode           String                  @unique
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  owner                User                    @relation("TeamOwner", fields: [ownerId], references: [id])
+  members              TeamMember[]
+  roles                Role[]
+  accounts             Account[]
+  contributionInvoices ContributionInvoice[]
+  contributionPayments ContributionPayment[]
+  transactions         Transaction[]
+  donations            Donation[]
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
+  auditLogs            AuditLog[]
+  invitations          TeamInvitation[]
+  transactionCategories TransactionCategory[]
+}
+
+model TeamMember {
+  id          String           @id @default(uuid()) @db.Uuid
+  teamId      String           @db.Uuid
+  userId      String           @db.Uuid
+  roleId      String?          @db.Uuid
+  memberName  String
+  phoneNumber String?
+  systemRole  SystemRole
+  status      TeamMemberStatus
+  joinedAt    DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  team        Team             @relation(fields: [teamId], references: [id])
+  user        User             @relation(fields: [userId], references: [id])
+  role        Role?            @relation(fields: [roleId], references: [id])
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+model Role {
+  id         String       @id @default(uuid()) @db.Uuid
+  teamId      String       @db.Uuid
+  name        String
+  feeAmount   Decimal      @db.Decimal(14, 2)
+  periodType  PeriodType
+  invoiceDueDay Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  team        Team         @relation(fields: [teamId], references: [id])
+  members     TeamMember[]
+  invoices    ContributionInvoice[]
+  invitations TeamInvitation[]
+
+  @@index([teamId])
+}
+
+model TeamInvitation {
+  id            String           @id @default(uuid()) @db.Uuid
+  teamId         String           @db.Uuid
+  roleId         String?          @db.Uuid
+  invitedName    String
+  invitedEmail   String?
+  invitedPhone   String?
+  inviteCode     String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedBy      String           @db.Uuid
+  acceptedBy     String?          @db.Uuid
+  acceptedAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  team           Team             @relation(fields: [teamId], references: [id])
+  role           Role?            @relation(fields: [roleId], references: [id])
+  inviter        User             @relation("InvitationCreatedBy", fields: [invitedBy], references: [id])
+  accepter       User?            @relation("InvitationAcceptedBy", fields: [acceptedBy], references: [id])
+
+  @@index([teamId, status])
+  @@index([roleId])
+  @@index([invitedBy])
+  @@index([acceptedBy])
+}
+
+model Account {
+  id           String          @id @default(uuid()) @db.Uuid
+  teamId        String          @db.Uuid
+  name          String
+  type          AccountType
+  bankName      String?
+  accountNumber String?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  team          Team            @relation(fields: [teamId], references: [id])
+  payments      ContributionPayment[]
+  transactions  Transaction[]
+  donations     Donation[]
+
+  @@index([teamId])
+}
+
+model ContributionInvoice {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  invoiceCode        String                 @unique
+  teamId             String                 @db.Uuid
+  userId             String                 @db.Uuid
+  roleId             String                 @db.Uuid
+  periodDate         DateTime               @db.Date
+  dueDate            DateTime               @db.Date
+  amount             Decimal                @db.Decimal(14, 2)
+  status             InvoiceStatus
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  team               Team                   @relation(fields: [teamId], references: [id])
+  user               User                   @relation(fields: [userId], references: [id])
+  role               Role                   @relation(fields: [roleId], references: [id])
+  payments           ContributionPayment[]
+  reminders          InvoiceReminder[]
+
+  @@unique([teamId, userId, periodDate])
+  @@index([teamId, status])
+}
+
+enum HolidayType {
+  NATIONAL
+  CUTI_BERSAMA
+}
+
+model NationalHoliday {
+  id          String      @id @default(uuid()) @db.Uuid
+  holidayDate DateTime    @unique @db.Date
+  name        String
+  type        HolidayType @default(NATIONAL)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model ContributionPayment {
+  id               String          @id @default(uuid()) @db.Uuid
+  invoiceId        String          @db.Uuid
+  teamId           String          @db.Uuid
+  userId           String          @db.Uuid
+  accountId        String          @db.Uuid
+  amount           Decimal         @db.Decimal(14, 2)
+  proofUrl         String?
+  storageKey       String?
+  originalFileName String?
+  mimeType         String?
+  fileSize         Int?
+  note             String?
+  status           PaymentStatus
+  approvedById     String?         @db.Uuid
+  approvedAt       DateTime?
+  rejectedById     String?         @db.Uuid
+  rejectedAt       DateTime?
+  rejectedReason   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  invoice          ContributionInvoice @relation(fields: [invoiceId], references: [id])
+  team             Team            @relation(fields: [teamId], references: [id])
+  user             User            @relation("PaymentUser", fields: [userId], references: [id])
+  account          Account         @relation(fields: [accountId], references: [id])
+  approver         User?           @relation("PaymentApprover", fields: [approvedById], references: [id])
+  rejecter         User?           @relation("PaymentRejecter", fields: [rejectedById], references: [id])
+
+  @@index([invoiceId, status])
+  @@index([teamId, status])
+}
+
+model Transaction {
+  id               String              @id @default(uuid()) @db.Uuid
+  teamId           String              @db.Uuid
+  accountId        String              @db.Uuid
+  categoryId       String?             @db.Uuid
+  type             TransactionType
+  source           TransactionSource
+  amount           Decimal             @db.Decimal(14, 2)
+  description      String?
+  proofUrl         String?
+  storageKey       String?
+  originalFileName String?
+  mimeType         String?
+  fileSize         Int?
+  referenceId      String?
+  createdBy        String              @db.Uuid
+  createdAt        DateTime            @default(now())
+  team             Team                @relation(fields: [teamId], references: [id])
+  account          Account             @relation(fields: [accountId], references: [id])
+  category         TransactionCategory? @relation(fields: [categoryId], references: [id])
+  creator          User                @relation(fields: [createdBy], references: [id])
+  attachments      TransactionAttachment[]
+
+  @@index([teamId, accountId, createdAt])
+  @@index([teamId, categoryId])
+}
+
+model TransactionAttachment {
+  id               String      @id @default(uuid()) @db.Uuid
+  transactionId    String      @db.Uuid
+  storageKey       String
+  originalFileName String
+  mimeType         String
+  fileSize         Int
+  createdAt        DateTime    @default(now())
+  transaction      Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+}
+
+model Donation {
+  id          String    @id @default(uuid()) @db.Uuid
+  teamId       String    @db.Uuid
+  userId       String    @db.Uuid
+  accountId    String    @db.Uuid
+  amount       Decimal   @db.Decimal(14, 2)
+  isAnonymous  Boolean   @default(false)
+  donorName    String?
+  note         String?
+  createdAt    DateTime  @default(now())
+  team         Team      @relation(fields: [teamId], references: [id])
+  user         User      @relation(fields: [userId], references: [id])
+  account      Account   @relation(fields: [accountId], references: [id])
+
+  @@index([teamId, createdAt])
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  teamId     String?   @db.Uuid
+  type       String
+  title      String
+  message    String
+  isRead     Boolean   @default(false)
+  data       Json?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id])
+  team       Team?     @relation(fields: [teamId], references: [id])
+
+  @@index([userId, isRead, createdAt])
+}
+
+model ActivityLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  teamId       String?   @db.Uuid
+  userId       String?   @db.Uuid
+  action       String
+  entityType   String
+  entityId     String?   @db.Uuid
+  description  String
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  team         Team?     @relation(fields: [teamId], references: [id])
+  user         User?     @relation(fields: [userId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorId     String   @db.Uuid
+  teamId      String?  @db.Uuid
+  action      String
+  module      String
+  targetId    String?  @db.Uuid
+  description String
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  actor       User     @relation(fields: [actorId], references: [id])
+  team        Team?    @relation(fields: [teamId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([teamId, createdAt])
+  @@index([action, createdAt])
+  @@index([module, createdAt])
+}
+
+model EodRun {
+  id             String    @id @default(uuid()) @db.Uuid
+  runDate        DateTime  @db.Date
+  mode           EodMode
+  status         EodStatus
+  startedAt      DateTime
+  finishedAt     DateTime?
+  triggeredById  String?   @db.Uuid
+  processedCount Int       @default(0)
+  successCount   Int       @default(0)
+  failedCount    Int       @default(0)
+  errorMessage   String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  triggeredBy    User?     @relation(fields: [triggeredById], references: [id])
+
+  @@index([runDate, mode])
+  @@index([status, createdAt])
+}
+
+model InvoiceReminder {
+  id            String                @id @default(uuid()) @db.Uuid
+  invoiceId      String                @db.Uuid
+  userId         String                @db.Uuid
+  reminderType   String
+  sentAt         DateTime              @default(now())
+  invoice        ContributionInvoice   @relation(fields: [invoiceId], references: [id])
+  user           User                  @relation(fields: [userId], references: [id])
+
+  @@unique([invoiceId, userId, reminderType])
+  @@index([userId, sentAt])
+}
+
+model EmailTemplate {
+  id               String              @id @default(uuid()) @db.Uuid
+  type             EmailTemplateType
+  name             String
+  subject          String
+  htmlBody         String
+  textBody         String?
+  status           EmailTemplateStatus  @default(DRAFT)
+  version          Int
+  isActive         Boolean             @default(false)
+  requiredVariables Json
+  createdBy        String?             @db.Uuid
+  updatedBy        String?             @db.Uuid
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  creator          User?               @relation("EmailTemplateCreatedBy", fields: [createdBy], references: [id])
+  updater          User?               @relation("EmailTemplateUpdatedBy", fields: [updatedBy], references: [id])
+  logs             EmailLog[]
+
+  @@unique([type, version])
+  @@index([type, isActive])
+  @@index([type, status])
+  @@index([updatedAt])
+}
+
+model EmailLog {
+  id              String           @id @default(uuid()) @db.Uuid
+  to              String
+  subject         String
+  type            EmailTemplateType
+  templateId      String?          @db.Uuid
+  templateVersion Int?
+  status          EmailLogStatus   @default(PENDING)
+  provider        String           @default("brevo")
+  messageId       String?
+  error           String?
+  createdAt       DateTime         @default(now())
+  template        EmailTemplate?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([type, status])
+  @@index([templateId, createdAt])
+  @@index([createdAt])
+}

@@ -1,0 +1,33 @@
+# === Environment / Secrets ===
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# === Database Backups ===
+*.dump
+*.sql
+*.sqlite
+*.db
+# Exception: Prisma migration files must be tracked
+!backend/prisma/migrations/**/migration.sql
+
+# === Archives & Binary Blobs ===
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# === Runtime / Tool Artifacts ===
+.codex
+.claude/
+.DS_Store
+Thumbs.db
+*.log
+
+# === Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo

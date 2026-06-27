@@ -1,0 +1,7 @@
+# Override lokal (Windows) — tidak dipakai di produksi.
+# Postgres 18 lokal sudah memakai host port 5432, jadi container Docker
+# dipetakan ke 5433 di host. Port internal tetap 5432 (api connect normal).
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"

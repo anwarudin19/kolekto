@@ -1,0 +1,121 @@
+﻿name: TestSprite Hackathon CI
+
+on:
+  push:
+    branches:
+      - main
+      - feature/kolekto-core
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build backend and frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable Corepack for pnpm
+        run: corepack enable
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build backend
+        working-directory: backend
+        run: pnpm build
+
+      - name: Validate frontend build secrets
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+        run: |
+          for var in NEXT_PUBLIC_API_URL NEXT_PUBLIC_APP_URL; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var is required."
+              exit 1
+            fi
+          done
+
+      - name: Install frontend dependencies
+        working-directory: web-admin
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web-admin
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+        run: npm run build
+
+  testsprite:
+    name: Run TestSprite on live app
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # TestSprite targets the live deployment, so it only runs after main updates
+    # (when Vercel/Coolify auto-deploy) or when a maintainer starts it manually.
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    env:
+      TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+      TESTSPRITE_TARGET_URL: ${{ secrets.TESTSPRITE_TARGET_URL }}
+      TESTSPRITE_PROJECT_ID: ${{ secrets.TESTSPRITE_PROJECT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate TestSprite secrets
+        run: |
+          for var in TESTSPRITE_API_KEY TESTSPRITE_TARGET_URL TESTSPRITE_PROJECT_ID; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var is required."
+              exit 1
+            fi
+          done
+
+      - name: Wait for live URL
+        shell: bash
+        run: |
+          echo "Waiting for live deployment at TESTSPRITE_TARGET_URL..."
+          for attempt in $(seq 1 120); do
+            status_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$TESTSPRITE_TARGET_URL" || true)"
+            if [ "$status_code" = "200" ] || [ "$status_code" = "302" ]; then
+              echo "Live app is reachable with HTTP $status_code."
+              exit 0
+            fi
+            echo "Attempt ${attempt}/120: HTTP ${status_code:-000}. Waiting 5 seconds..."
+            sleep 5
+          done
+          echo "::error::Live app did not become reachable within 10 minutes."
+          exit 1
+
+      - name: Install TestSprite CLI
+        # TODO: Confirm the exact TestSprite CLI package/flags if the vendor updates them.
+        run: npm install -g testsprite@latest
+
+      - name: Run TestSprite
+        # TODO: Adjust the command if TestSprite requires a different flag set.
+        run: |
+          testsprite run \
+            --project "$TESTSPRITE_PROJECT_ID" \
+            --url "$TESTSPRITE_TARGET_URL"

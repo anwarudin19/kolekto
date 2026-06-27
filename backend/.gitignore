@@ -1,0 +1,36 @@
+# === Dependencies ===
+node_modules/
+.pnpm-store/
+
+# === Build Output ===
+dist/
+
+# === Environment / Secrets ===
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+
+# === Runtime Logs ===
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# === Test Coverage ===
+coverage/
+
+# === Database Dev Files ===
+prisma/dev.db
+prisma/dev.db-journal
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
