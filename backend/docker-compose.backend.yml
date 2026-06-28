@@ -15,58 +15,25 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./logs:/app/logs
-    depends_on:
-      - postgres
-      - minio
-      - redis
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.middlewares.kolekto-api-redirect-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.kolekto-api-gzip.compress=true
+      - traefik.http.routers.kolekto-api-http.entrypoints=http
+      - traefik.http.routers.kolekto-api-http.rule=Host(`kolekto.anwarudin.web.id`) && PathPrefix(`/api`)
+      - traefik.http.routers.kolekto-api-http.middlewares=kolekto-api-redirect-https
+      - traefik.http.routers.kolekto-api-https.entrypoints=https
+      - traefik.http.routers.kolekto-api-https.rule=Host(`kolekto.anwarudin.web.id`) && PathPrefix(`/api`)
+      - traefik.http.routers.kolekto-api-https.tls=true
+      - traefik.http.routers.kolekto-api-https.tls.certresolver=letsencrypt
+      - traefik.http.routers.kolekto-api-https.middlewares=kolekto-api-gzip
+      - traefik.http.routers.kolekto-api-https.priority=100
+      - traefik.http.services.kolekto-api.loadbalancer.server.port=3000
+    networks:
+      - default
+      - coolify
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: kolekto-postgres
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      TZ: Asia/Jakarta
-      PGTZ: Asia/Jakarta
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    command:
-      - postgres
-      - -c
-      - timezone=Asia/Jakarta
-      - -c
-      - log_timezone=Asia/Jakarta
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  minio:
-    image: minio/minio:RELEASE.2025-02-07T23-21-09Z
-    container_name: kolekto-minio
-    restart: unless-stopped
-    environment:
-      TZ: Asia/Jakarta
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    command: server /data --console-address ":9001"
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
-    volumes:
-      - minio_data:/data
-
-  redis:
-    image: redis:7-alpine
-    container_name: kolekto-redis
-    restart: unless-stopped
-    environment:
-      TZ: Asia/Jakarta
-    volumes:
-      - redis_data:/data
-    command: ["redis-server", "--appendonly", "yes"]
-
-volumes:
-  postgres_data:
-  minio_data:
-  redis_data:
+networks:
+  coolify:
+    external: true
